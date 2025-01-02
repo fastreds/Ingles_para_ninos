@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Learn English for Kids</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js/dist/tesseract.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f8ff;
+        }
+        video {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+            border: 2px solid #333;
+            border-radius: 8px;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+        li {
+            display: flex;
+            align-items: center;
+            margin: 10px;
+            padding: 10px;
+            background: #e6f7ff;
+            border: 1px solid #b3d9ff;
+            border-radius: 5px;
+        }
+        img {
+            width: 50px;
+            height: 50px;
+            margin-right: 10px;
+            border-radius: 5px;
+            object-fit: cover;
+        }
+    </style>
+</head>
+<body>
+    <h1>Learn English for Kids</h1>
+    <video id="video" autoplay></video>
+    <ul id="wordList"></ul>
+
+    <script>
+        const video = document.getElementById('video');
+        const wordList = document.getElementById('wordList');
+        const spokenWords = new Set();
+
+        // Access the camera
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                video.srcObject = stream;
+            })
+            .catch(err => console.error('Error accessing camera:', err));
+
+        // Recognize text and process it
+        async function recognizeText() {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const { data: { text } } = await Tesseract.recognize(canvas, 'eng');
+            const words = text.split(/\s+/).filter(word => isValidWord(word));
+
+            for (const word of words) {
+                if (!spokenWords.has(word)) {
+                    spokenWords.add(word);
+                    processWord(word);
+                }
+            }
+
+            setTimeout(recognizeText, 2000); // Repeat every 2 seconds
+        }
+
+        // Check if a word is valid
+        function isValidWord(word) {
+            return word.length > 2 && /^[a-zA-Z]+$/.test(word) && !isGibberish(word);
+        }
+
+        // Basic check for gibberish words
+        function isGibberish(word) {
+            const commonWords = ['the', 'and', 'for', 'you', 'are', 'with', 'this', 'that'];
+            return word.length > 10 || commonWords.includes(word.toLowerCase());
+        }
+
+        // Process the word: detect language, translate, and speak
+        async function processWord(word) {
+            try {
+                // Example of using a dictionary or translation API
+                const translations = await Promise.all([
+                    translateWord(word, 'en'),
+                    translateWord(word, 'es'),
+                    translateWord(word, 'fr')
+                ]);
+
+                const [englishWord, spanishWord, frenchWord] = translations;
+
+                speakTranslations({
+                    en: englishWord,
+                    es: spanishWord,
+                    fr: frenchWord
+                });
+
+                addWordToList(word, englishWord, spanishWord, frenchWord);
+            } catch (err) {
+                console.error('Error processing word:', err.response?.data || err.message || err);
+            }
+        }
+
+        // Translate word to a target language
+        async function translateWord(word, targetLang) {
+            if (targetLang === 'en') return word; // No translation needed for 'en'
+            try {
+                const response = await axios.post('https://api.mymemory.translated.net/get', {
+                    q: word,
+                    langpair: `en|${targetLang}`
+                });
+                return response.data.responseData.translatedText;
+            } catch (err) {
+                console.error('Translation error:', err.response?.data || err.message || err);
+                return word;
+            }
+        }
+
+        // Speak translations in different languages
+        function speakTranslations(translations) {
+            const languages = [
+                { lang: 'en-US', text: translations.en },
+                { lang: 'es-ES', text: translations.es },
+                { lang: 'fr-FR', text: translations.fr }
+            ];
+
+            languages.forEach(({ lang, text }) => {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = lang;
+                speechSynthesis.speak(utterance);
+            });
+        }
+
+        // Add word and image to the list
+        async function addWordToList(originalWord, englishWord, spanishWord, frenchWord) {
+            const listItem = document.createElement('li');
+            const img = document.createElement('img');
+            const textNode = document.createTextNode(
+                `${originalWord} - EN: ${englishWord}, ES: ${spanishWord}, FR: ${frenchWord}`
+            );
+
+            const sources = [
+                `https://api.unsplash.com/photos/random?query=${englishWord}&client_id=YOUR_UNSPLASH_API_KEY`,
+                `https://pixabay.com/api/?key=YOUR_PIXABAY_API_KEY&q=${englishWord}&image_type=photo`,
+                `https://api.lorem.space/image?w=50&h=50&text=${englishWord}`
+            ];
+
+            let imageLoaded = false;
+
+            for (const src of sources) {
+                try {
+                    const response = await axios.get(src);
+                    if (response.status === 200) {
+                        const imageUrl = extractImageUrl(response.data, src);
+                        if (imageUrl) {
+                            img.src = imageUrl;
+                            imageLoaded = true;
+                            break;
+                        }
+                    }
+                } catch (err) {
+                    console.warn(`Error fetching image from source: ${src}`, err);
+                }
+            }
+
+            if (!imageLoaded) {
+                img.src = 'https://cdn-icons-png.flaticon.com/512/833/833314.png'; // Default icon
+            }
+
+            img.onerror = () => {
+                img.src = 'https://cdn-icons-png.flaticon.com/512/833/833314.png'; // Fallback icon
+            };
+
+            listItem.appendChild(img);
+            listItem.appendChild(textNode);
+            wordList.appendChild(listItem);
+        }
+
+        // Extract image URL based on source response
+        function extractImageUrl(data, source) {
+            if (source.includes('unsplash.com')) {
+                return data.urls && data.urls.small;
+            } else if (source.includes('pixabay.com')) {
+                return data.hits && data.hits[0] && data.hits[0].webformatURL;
+            } else {
+                return null;
+            }
+        }
+
+        // Start recognition
+        video.addEventListener('loadeddata', recognizeText);
+    </script>
+</body>
+</html>
